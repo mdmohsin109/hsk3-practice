@@ -1,18 +1,20 @@
 /* HSK 3 · 词句练习 — sentence-based writing practice
  *
  * Data (data.js):
- *   PRACTICE.questions[i] = {w, py, pre, post, en, meaning, lesson, alts, src}
- *     w      the HSK 3 word to type
- *     py     contextual pinyin shown above the blank
- *     pre/post  the sentence around the blank
- *     en     English hint (sentence- or paragraph-level)
- *     lesson 1..20, 0 = words that only occur in the review stories
- *     alts   other accepted surfaces (e.g. 聊天 / 聊天儿)
+ *   PRACTICE.questions[i] = {k, w, py, pre, post, en, meaning, level, lesson, alts}
+ *     k      unique key for progress (a few characters repeat across levels)
+ *     w      the word to type
+ *     py     pinyin shown above the blank
+ *     pre/post  the supplied example sentence around the blank
+ *     en     English hint for that sentence
+ *     level  hsk1 | hsk2 | hsk3
+ *     lesson 1..20 for new HSK 3 words, null for HSK 1-2 words
+ *     alts   other accepted surfaces (e.g. 那 / 那儿)
  *
  * Spaced repetition lives in localStorage under hsk3.practice.v1:
- *   words[word] = {b: box 0..6, due: ms, seen, ok, no}
- *   mistakes    = {word: ms}
- *   stats       = {attempts, correct}
+ *   words[key] = {b: box 0..6, due: ms, seen, ok, no}
+ *   mistakes   = {key: ms}
+ *   stats      = {attempts, correct}
  */
 (function () {
   'use strict';
@@ -26,8 +28,8 @@
   var MISTAKE_SIZE = 40;
 
   var QUESTIONS = PRACTICE.questions;
-  var BY_WORD = {};
-  for (var q = 0; q < QUESTIONS.length; q++) BY_WORD[QUESTIONS[q].w] = QUESTIONS[q];
+  var BY_ID = {};
+  for (var q = 0; q < QUESTIONS.length; q++) BY_ID[QUESTIONS[q].k] = QUESTIONS[q];
 
   var APP = document.getElementById('app');
 
@@ -53,21 +55,21 @@
     try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch (e) { /* ignore */ }
   }
 
-  function record(word, ok) {
-    var rec = S.words[word] || { b: 0, due: 0, seen: 0, ok: 0, no: 0 };
+  function record(key, ok) {
+    var rec = S.words[key] || { b: 0, due: 0, seen: 0, ok: 0, no: 0 };
     rec.seen++;
     if (ok) {
       rec.ok++;
       rec.b = Math.min(rec.b + 1, 6);
       rec.due = Date.now() + DAYS[rec.b - 1] * 864e5;
-      delete S.mistakes[word];
+      delete S.mistakes[key];
     } else {
       rec.no++;
       rec.b = 0;
       rec.due = Date.now() + WRONG_DELAY;
-      S.mistakes[word] = Date.now();
+      S.mistakes[key] = Date.now();
     }
-    S.words[word] = rec;
+    S.words[key] = rec;
     S.stats.attempts++;
     if (ok) S.stats.correct++;
     save();
@@ -76,7 +78,7 @@
   function dueWords() {
     var now = Date.now(), out = [];
     for (var w in S.words) {
-      if (S.words[w].due <= now) out.push(w);
+      if (BY_ID[w] && S.words[w].due <= now) out.push(w);
     }
     out.sort(function (a, b) { return S.words[a].due - S.words[b].due; });
     return out;
@@ -84,7 +86,7 @@
 
   function masteredCount() {
     var n = 0;
-    for (var w in S.words) if (S.words[w].b >= 4) n++;
+    for (var w in S.words) if (BY_ID[w] && S.words[w].b >= 4) n++;
     return n;
   }
 
@@ -172,16 +174,16 @@
     var wrap = el('div', 'wrap');
 
     var hero = el('section', 'hero');
-    hero.appendChild(el('p', 'eyebrow', 'HSK 3 · 书写练习 · 599 words'));
+    hero.appendChild(el('p', 'eyebrow', 'HSK 3 · 书写练习 · ' + PRACTICE.words + ' words'));
     var h1 = el('h1');
     h1.appendChild(document.createTextNode('Write the missing '));
     h1.appendChild(el('em', null, 'word'));
     h1.appendChild(document.createTextNode('.'));
     hero.appendChild(h1);
     hero.appendChild(el('p', 'lede',
-      'A real sentence from the course book with one HSK 3 word blanked out. ' +
-      'The pinyin sits above the blank — type the Chinese characters that fit the sentence. ' +
-      'Every word, all 20 lessons.'));
+      'Every word comes with a ready-made example sentence. One word is blanked out, ' +
+      'its pinyin sits above the blank — type the Chinese characters that fit the sentence. ' +
+      '600 words: about 15 new words per lesson, plus HSK 1–2 vocabulary.'));
     wrap.appendChild(hero);
 
     var stats = el('section', 'stats');
@@ -192,7 +194,9 @@
     wrap.appendChild(stats);
 
     var due = dueWords();
-    var unseen = QUESTIONS.length - Object.keys(S.words).length;
+    var seenCount = 0;
+    for (var sw in S.words) if (BY_ID[sw]) seenCount++;
+    var unseen = QUESTIONS.length - seenCount;
     var modes = el('section', 'modes');
 
     modes.appendChild(modeCard('smart', '复',
@@ -203,10 +207,11 @@
 
     modes.appendChild(modeCard('random', '随',
       'Random practice',
-      'A mixed set of ' + RANDOM_SIZE + ' sentences from the whole book.',
+      'A mixed set of ' + RANDOM_SIZE + ' sentences from all 600 words.',
       RANDOM_SIZE + ' words', true));
 
-    var mistakeCount = Object.keys(S.mistakes).length;
+    var mistakeCount = 0;
+    for (var mw in S.mistakes) if (BY_ID[mw]) mistakeCount++;
     modes.appendChild(modeCard('mistakes', '错',
       'Mistakes',
       'Only the words you got wrong, until they stick.',
@@ -218,7 +223,7 @@
     var lessons = el('section', 'lessons');
     var head = el('div', 'section-head');
     head.appendChild(el('h2', null, 'By lesson'));
-    head.appendChild(el('p', 'note', 'New words of each lesson + an extra deck'));
+    head.appendChild(el('p', 'note', 'New HSK 3 words — about 15 per lesson'));
     lessons.appendChild(head);
 
     var grid = el('div', 'lesson-grid');
@@ -227,7 +232,7 @@
       var b = el('button', 'lesson');
       b.type = 'button';
       var ln = el('span', 'ln');
-      ln.appendChild(el('span', null, L.n ? 'LESSON ' + (L.n < 10 ? '0' + L.n : L.n) : 'EXTRA'));
+      ln.appendChild(el('span', null, 'LESSON ' + (L.n < 10 ? '0' + L.n : L.n)));
       ln.appendChild(el('span', 'cnt', L.total + ' words'));
       b.appendChild(ln);
       b.appendChild(el('span', 'lzh', L.zh));
@@ -273,7 +278,7 @@
     if (mode === 'lesson') {
       var n = parseInt(lesson, 10);
       return {
-        title: n ? 'Lesson ' + n : 'Extra words',
+        title: 'Lesson ' + n,
         list: QUESTIONS.filter(function (x) { return x.lesson === n; })
       };
     }
@@ -281,18 +286,18 @@
       return { title: 'Random practice', list: shuffle(QUESTIONS).slice(0, RANDOM_SIZE) };
     }
     if (mode === 'mistakes') {
-      var words = Object.keys(S.mistakes).filter(function (w) { return BY_WORD[w]; });
+      var keys = Object.keys(S.mistakes).filter(function (k) { return BY_ID[k]; });
       return {
         title: 'Mistakes',
-        list: shuffle(words.map(function (w) { return BY_WORD[w]; })).slice(0, MISTAKE_SIZE)
+        list: shuffle(keys.map(function (k) { return BY_ID[k]; })).slice(0, MISTAKE_SIZE)
       };
     }
     // smart: due first, then unseen words
-    var due = dueWords().filter(function (w) { return BY_WORD[w]; });
+    var due = dueWords();
     var seen = {};
-    var queue = due.map(function (w) { seen[w] = 1; return BY_WORD[w]; });
+    var queue = due.map(function (k) { seen[k] = 1; return BY_ID[k]; });
     if (queue.length < SMART_SIZE) {
-      var fresh = QUESTIONS.filter(function (x) { return !S.words[x.w] && !seen[x.w]; });
+      var fresh = QUESTIONS.filter(function (x) { return !S.words[x.k] && !seen[x.k]; });
       queue = queue.concat(shuffle(fresh).slice(0, SMART_SIZE - queue.length));
     }
     return { title: 'Smart review', list: queue.slice(0, SMART_SIZE) };
@@ -444,8 +449,8 @@
       input.classList.add(ok ? 'ok' : 'no');
       if (!ok) input.value = question.w;
 
-      record(question.w, ok);
-      if (!ok) s.missed.push(question.w);
+      record(question.k, ok);
+      if (!ok) s.missed.push(question.k);
       else s.correct++;
 
       fill.style.width = ((s.i + 1) / s.list.length * 100) + '%';
@@ -546,10 +551,12 @@
     card.appendChild(el('p', 'result-sub', s.correct + ' of ' + total + ' correct'));
 
     var stats = el('div', 'result-stats');
+    var toReview = 0;
+    for (var mk in S.mistakes) if (BY_ID[mk]) toReview++;
     [
       [String(s.correct), 'Correct'],
       [String(total - s.correct), 'Missed'],
-      [String(Object.keys(S.mistakes).length), 'To review']
+      [String(toReview), 'To review']
     ].forEach(function (r) {
       var b = el('div', 'rs');
       b.appendChild(el('b', null, r[0]));
@@ -563,10 +570,10 @@
       missed.appendChild(el('h3', null, 'Words to remember'));
       var ul = el('ul');
       var seen = {};
-      s.missed.forEach(function (w) {
-        if (seen[w]) return;
-        seen[w] = 1;
-        var question = BY_WORD[w];
+      s.missed.forEach(function (k) {
+        if (seen[k]) return;
+        seen[k] = 1;
+        var question = BY_ID[k];
         if (!question) return;
         var li = el('li');
         li.appendChild(el('span', 'mw', question.w));
